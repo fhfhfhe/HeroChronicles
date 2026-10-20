@@ -870,8 +870,12 @@ function delRef(){
 }
 function saveRules(){
   var keys=['disc_bonus','disc_penalty','chore_points','chore_penalty','xp_per_level','hero_level_xp'],i,vals={};
-  for(i=0;i<keys.length;i++){var v=parseInt($('set_'+keys[i]).value,10);if(isNaN(v)||v<0){alert('Все значения — целые числа не меньше 0.');return;}vals[keys[i]]=v;}
-  for(i=0;i<keys.length;i++){DATA.settings[keys[i]]=vals[i];}
+  for(i=0;i<keys.length;i++){
+    var v=parseInt($('set_'+keys[i]).value,10);
+    if(isNaN(v)||v<0){alert('Все значения — целые числа не меньше 0.');return;}
+    vals[keys[i]]=v;
+  }
+  for(i=0;i<keys.length;i++){DATA.settings[keys[i]]=vals[keys[i]];}
   saveData();alert('Правила сохранены!');
 }
 
