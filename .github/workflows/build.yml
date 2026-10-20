@@ -7,6 +7,10 @@ jobs:
   build:
     runs-on: ubuntu-latest
 
+    env:
+      ANDROID_HOME: /usr/local/lib/android/sdk
+      ANDROID_SDK_ROOT: /usr/local/lib/android/sdk
+
     steps:
       - uses: actions/checkout@v4
 
@@ -15,16 +19,115 @@ jobs:
           distribution: temurin
           java-version: "17"
 
-      - uses: android-actions/setup-android@v3
+      - name: Проверка структуры проекта
+        run: |
+          echo "===== ФАЙЛЫ В РЕПОЗИТОРИИ ====="
+          find . -not -path './.git/*' -type f | sort
+          echo "================================"
 
-      - run: yes | sdkmanager --licenses || true
-      - run: sdkmanager "platform-tools" "platforms;android-34" "build-tools;34.0.0"
+          miss=0
 
-      - uses: gradle/actions/setup-gradle@v3
+          [ -f settings.gradle ] || { echo "❌ НЕТ settings.gradle в корне"; miss=1; }
+          [ -f build.gradle ] || { echo "❌ НЕТ build.gradle в корне"; miss=1; }
+          [ -f gradle.properties ] || { echo "❌ НЕТ gradle.properties в корне"; miss=1; }
+          [ -f app/build.gradle ] || { echo "❌ НЕТ app/build.gradle"; miss=1; }
+          [ -f app/src/main/AndroidManifest.xml ] || { echo "❌ НЕТ app/src/main/AndroidManifest.xml"; miss=1; }
+          [ -f app/src/main/assets/index.html ] || { echo "❌ НЕТ app/src/main/assets/index.html"; miss=1; }
+
+          if [ -d app/src/main/java ]; then
+            MAIN_JAVA=$(find app/src/main/java -type f -name 'MainActivity.java' 2>/dev/null | head -n1)
+          else
+            MAIN_JAVA=""
+          fi
+
+          if [ -z "$MAIN_JAVA" ]; then
+            echo "❌ НЕТ MainActivity.java в app/src/main/java/**"
+            miss=1
+          else
+            echo "✅ MainActivity найден: $MAIN_JAVA"
+          fi
+
+          if [ "$miss" = "1" ]; then
+            echo ""
+            echo "Исправь структуру: файлы должны лежать по путям:"
+            echo "settings.gradle"
+            echo "build.gradle"
+            echo "gradle.properties"
+            echo "app/build.gradle"
+            echo "app/src/main/AndroidManifest.xml"
+            echo "app/src/main/java/ru/hero/chronicles/MainActivity.java"
+            echo "app/src/main/assets/index.html"
+            exit 1
+          fi
+
+          echo "✅ Структура в порядке"
+
+      - name: Подготовить Android SDK
+        id: sdk
+        run: |
+          set -e
+
+          ORIGINAL_ANDROID_HOME="${ANDROID_HOME:-/usr/local/lib/android/sdk}"
+
+          if [ -d "$ORIGINAL_ANDROID_HOME" ] && [ -w "$ORIGINAL_ANDROID_HOME" ]; then
+            SDK_ROOT="$ORIGINAL_ANDROID_HOME"
+            echo "Использую системный Android SDK: $SDK_ROOT"
+          else
+            SDK_ROOT="$HOME/android-sdk"
+            mkdir -p "$SDK_ROOT"
+            echo "Системный SDK недоступен для записи, использую домашний каталог: $SDK_ROOT"
+          fi
+
+          echo "ANDROID_HOME=$SDK_ROOT" >> "$GITHUB_ENV"
+          echo "ANDROID_SDK_ROOT=$SDK_ROOT" >> "$GITHUB_ENV"
+
+          SDKM=$(find "$SDK_ROOT/cmdline-tools" -maxdepth 4 -type f -name sdkmanager 2>/dev/null | sort | tail -n1)
+
+          if [ -z "$SDKM" ]; then
+            echo "sdkmanager не найден, скачиваю command line tools..."
+            mkdir -p "$SDK_ROOT/cmdline-tools"
+            cd "$SDK_ROOT/cmdline-tools"
+
+            curl -fsSL -o cmdtools.zip \
+              https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip
+
+            unzip -q cmdtools.zip
+            rm -rf latest
+            mv cmdline-tools latest
+
+            SDKM="$SDK_ROOT/cmdline-tools/latest/bin/sdkmanager"
+          fi
+
+          if [ ! -f "$SDKM" ]; then
+            echo "::error::Не удалось найти или скачать sdkmanager"
+            exit 1
+          fi
+
+          chmod +x "$SDKM" || true
+
+          echo "Используемый sdkmanager: $SDKM"
+          echo "path=$SDKM" >> "$GITHUB_OUTPUT"
+
+      - name: Принять лицензии и установить нужные пакеты SDK
+        run: |
+          SDKM="${{ steps.sdk.outputs.path }}"
+
+          yes | "$SDKM" --sdk_root="$ANDROID_HOME" --licenses >/dev/null 2>&1 || true
+
+          "$SDKM" --sdk_root="$ANDROID_HOME" \
+            "platform-tools" \
+            "platforms;android-34" \
+            "build-tools;34.0.0"
+
+      - name: Прописать SDK для Gradle
+        run: echo "sdk.dir=$ANDROID_HOME" > local.properties
+
+      - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: "8.4"
 
-      - run: gradle assembleDebug --no-daemon --stacktrace
+      - name: Собрать APK
+        run: gradle assembleDebug --no-daemon --stacktrace
 
       - uses: actions/upload-artifact@v4
         with:
