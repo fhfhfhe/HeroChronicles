@@ -3,6 +3,7 @@ package ru.hero.chronicles;
 import android.app.Activity;
 import android.app.AlertDialog;
 import android.content.DialogInterface;
+import android.content.res.Configuration;
 import android.graphics.Color;
 import android.os.Bundle;
 import android.webkit.JsPromptResult;
@@ -33,6 +34,8 @@ public class MainActivity extends Activity {
         settings.setAllowContentAccess(true);
         settings.setBuiltInZoomControls(true);
         settings.setDisplayZoomControls(false);
+        settings.setLoadWithOverviewMode(true);
+        settings.setUseWideViewPort(true);
 
         webView.setWebViewClient(new WebViewClient());
 
@@ -122,6 +125,14 @@ public class MainActivity extends Activity {
         });
 
         webView.loadUrl("file:///android_asset/index.html");
+    }
+
+    // Поворот экрана НЕ пересоздаёт Activity (см. configChanges в манифесте).
+    // Этот метод лишь сообщает системе, что мы обрабатываем изменение сами.
+    @Override
+    public void onConfigurationChanged(Configuration newConfig) {
+        super.onConfigurationChanged(newConfig);
+        // WebView остаётся живым, состояние страницы (включая открытую вкладку) сохраняется.
     }
 
     @Override
